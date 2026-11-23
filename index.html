@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10243a">
+<title>QR Inspection | Mobile Inspector</title>
+<style>
+:root{--navy:#10243a;--navy2:#183650;--blue:#2563eb;--green:#16a36a;--bg:#f2f5f9;--ink:#172638;--muted:#718096;--line:#e3eaf1;--red:#c74747;--amber:#a66a0d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+button,input,textarea,select{font:inherit}button{cursor:pointer}
+header{background:var(--navy);color:#fff;padding:16px 18px;position:sticky;top:0;z-index:5;box-shadow:0 3px 14px #10243a22}
+.head{max-width:720px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:10px}.mark{width:38px;height:38px;border-radius:11px;background:linear-gradient(145deg,#2f80ed,#18a66a);display:grid;place-items:center;font-weight:800}
+.brand b{display:block;font-size:15px}.brand small{color:#b8c9d8;font-size:11px}.head button{border:1px solid #466078;background:#1b3852;color:#fff;border-radius:9px;padding:8px 11px;font-size:12px}
+main{max-width:720px;margin:auto;padding:18px 14px 42px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 5px 22px #10243a0a}
+h1{font-size:23px;margin:4px 0 5px;letter-spacing:-.4px}h2{font-size:17px;margin:0 0 12px}p{margin:4px 0;color:var(--muted)}
+.eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:1.3px;color:var(--green);font-weight:800}
+.field{display:grid;gap:6px;margin:13px 0}.field label{font-size:12px;font-weight:700;color:#526274}
+input,textarea,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;background:#fff;color:var(--ink);outline:none}
+input:focus,textarea:focus,select:focus{border-color:#6d9cec;box-shadow:0 0 0 3px #2563eb18}
+textarea{min-height:76px;resize:vertical}
+.btn{border:0;border-radius:10px;padding:12px 15px;font-weight:750;font-size:14px;background:#edf2f7;color:#304358}
+.btn.primary{background:var(--blue);color:#fff}.btn.green{background:var(--green);color:#fff}.btn.block{width:100%}.btn:disabled{opacity:.55;cursor:not-allowed}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+.muted{color:var(--muted);font-size:12px}.message{padding:11px 13px;border-radius:10px;margin:10px 0;font-size:13px;display:none}.message.show{display:block}.message.err{background:#fff0f0;color:#a33131;border:1px solid #f3cccc}.message.ok{background:#eaf8f0;color:#18734a;border:1px solid #ccebd9}.message.info{background:#eef5ff;color:#275a9f;border:1px solid #d7e6ff}
+.hidden{display:none!important}.assetline{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}.assetline:last-child{border:0}.assetline span{color:var(--muted);font-size:12px}
+.checkitem{border:1px solid var(--line);border-radius:12px;padding:13px;margin:11px 0}.checkitem b{display:block;font-size:14px}.checkitem small{display:block;color:var(--muted);margin:5px 0 10px}.choices{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.choice{position:relative}.choice input{position:absolute;opacity:0;pointer-events:none}.choice span{display:block;text-align:center;padding:10px 4px;border:1px solid var(--line);border-radius:9px;font-weight:750;font-size:12px;color:#56677a}.choice input:checked+span{border-color:var(--blue);background:#edf4ff;color:#1f58b5}
+#reader{width:100%;overflow:hidden;border-radius:12px}#reader video{border-radius:12px}
+.badge{display:inline-block;padding:5px 9px;border-radius:30px;background:#eaf8f0;color:#18734a;font-size:11px;font-weight:800}
+footer{text-align:center;color:#98a4b2;font-size:11px;padding:10px}
+@media(min-width:600px){main{padding-top:26px}.card{padding:22px}}
+</style>
+</head>
+<body>
+<header><div class="head"><div class="brand"><div class="mark">QR</div><div><b>QR Inspection System</b><small>Mobile Inspector</small></div></div><button id="logoutBtn" class="hidden" onclick="signOut()">Keluar</button></div></header>
+<main>
+<section id="loginScreen" class="card">
+ <div class="eyebrow">Akses Petugas</div><h1>Login Inspector</h1><p>Masuk menggunakan akun yang sudah didaftarkan pada organisasi.</p>
+ <form id="loginForm">
+  <div class="field"><label>Email</label><input id="email" type="email" autocomplete="username" placeholder="nama@perusahaan.com" required></div>
+  <div class="field"><label>Password</label><input id="password" type="password" autocomplete="current-password" placeholder="Password akun" required></div>
+  <button class="btn primary block" id="loginBtn">Masuk</button>
+ </form><div id="loginMsg" class="message"></div>
+</section>
+
+<section id="homeScreen" class="hidden">
+ <div class="card">
+  <div class="eyebrow">Organisasi aktif</div><h1 id="orgName">Elodie Demo</h1><p id="userLabel"></p>
+ </div>
+ <div class="card">
+  <h2>Mulai inspeksi</h2><p>Pindai QR Code aset atau masukkan QR Token untuk membuka identitas aset.</p>
+  <button class="btn primary block" onclick="startScanner()">Pindai QR dengan Kamera</button>
+  <div id="readerWrap" class="hidden" style="margin-top:14px"><div id="reader"></div><button class="btn block" style="margin-top:9px" onclick="stopScanner()">Tutup Kamera</button></div>
+  <div class="field"><label>Atau masukkan QR Token</label><input id="manualToken" placeholder="UUID QR Token"></div>
+  <button class="btn block" onclick="openByToken(document.getElementById('manualToken').value)">Cari Aset</button>
+  <div id="scanMsg" class="message"></div>
+ </div>
+ <div id="assetCard" class="card hidden">
+  <div class="eyebrow">Aset ditemukan</div><h1 id="assetName"></h1><span class="badge" id="assetStatus"></span>
+  <div class="assetline"><b>Kode Aset</b><span id="assetCode"></span></div>
+  <div class="assetline"><b>Jenis</b><span id="assetType"></span></div>
+  <div class="assetline"><b>Lokasi</b><span id="assetLocation"></span></div>
+  <div class="assetline"><b>Brand / Model</b><span id="assetBrand"></span></div>
+  <div class="assetline"><b>Serial Number</b><span id="assetSerial"></span></div>
+  <div id="assetNotes" class="muted" style="margin-top:10px"></div>
+  <button id="beginBtn" class="btn green block" style="margin-top:15px" onclick="beginInspection()">Mulai Inspeksi</button>
+ </div>
+ <div id="inspectionCard" class="card hidden">
+  <div class="eyebrow">Checklist inspeksi</div><h2 id="templateName">Checklist</h2><p id="templateDesc"></p>
+  <div id="checklistItems"></div>
+  <div class="field"><label>Catatan umum inspeksi</label><textarea id="generalNotes" placeholder="Catatan tambahan..."></textarea></div>
+  <div class="message info show">Pastikan seluruh item wajib sudah diberi hasil OK, NG, atau NA sebelum mengirim inspeksi.</div>
+  <button id="submitBtn" class="btn green block" onclick="submitInspection()">Kirim Hasil Inspeksi</button>
+  <button class="btn block" style="margin-top:8px" onclick="cancelInspection()">Batalkan</button>
+ </div>
+ <div id="doneCard" class="card hidden"><div class="eyebrow">Selesai</div><h1>Inspeksi terkirim</h1><p id="doneText">Hasil inspeksi berhasil disimpan.</p><button class="btn primary block" onclick="resetFlow()">Kembali ke Beranda</button></div>
+</section>
+<footer>QR Inspection System · Industrial Professional</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const SUPABASE_URL="https://kilrmcgjgipjnrxateyh.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable__32xG6J6OsOl1UxEjpphhg_Jw0xo_mN";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+let currentUser=null,currentMember=null,currentOrgId=null,currentAsset=null,currentTemplate=null,templateItems=[],scanner=null,inspectionId=null;
+const $=id=>document.getElementById(id);
+function message(id,text,type="info"){const el=$(id);el.textContent=text;el.className="message show "+type}
+function hide(id){$(id).classList.add("hidden")}function show(id){$(id).classList.remove("hidden")}
+function hideMessage(id){$(id).className="message"}
+function tokenFromValue(value){let s=String(value||"").trim();try{if(s.startsWith("http")){const u=new URL(s);s=u.searchParams.get("token")||u.searchParams.get("qr_token")||u.pathname.split("/").filter(Boolean).pop()||s;}}catch(e){}return s}
+async function signIn(e){e.preventDefault();$("loginBtn").disabled=true;$("loginBtn").textContent="Memeriksa akun...";hideMessage("loginMsg");
+ const {data,error}=await supabaseClient.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
+ $("loginBtn").disabled=false;$("loginBtn").textContent="Masuk";
+ if(error){message("loginMsg","Login gagal: "+error.message,"err");return}
+ await initialize(data.user);
+}
+async function initialize(user){currentUser=user;
+ const {data:members,error}=await supabaseClient.from("elodie_inspection_members").select("organization_id,full_name,role,is_active").eq("user_id",user.id).eq("is_active",true);
+ if(error||!members?.length){message("loginMsg",error?"Gagal membaca organisasi: "+error.message:"Akun belum terdaftar sebagai anggota organisasi.","err");await supabaseClient.auth.signOut();return}
+ currentMember=members[0];currentOrgId=currentMember.organization_id;
+ const {data:org}=await supabaseClient.from("elodie_inspection_organizations").select("name").eq("id",currentOrgId).single();
+ $("orgName").textContent=org?.name||"Organisasi";$("userLabel").textContent=(currentMember.full_name||user.email)+" · "+currentMember.role;
+ hide("loginScreen");show("homeScreen");show("logoutBtn");
+ const params=new URLSearchParams(location.search);const token=params.get("token")||params.get("qr_token");
+ if(token){$("manualToken").value=token;await openByToken(token)}
+}
+async function signOut(){await stopScanner();await supabaseClient.auth.signOut();location.href=location.pathname}
+$("loginForm").addEventListener("submit",signIn);
+supabaseClient.auth.getSession().then(async({data})=>{if(data.session)await initialize(data.session.user)});
+async function openByToken(raw){const token=tokenFromValue(raw);if(!token){message("scanMsg","QR Token belum diisi.","err");return}
+ message("scanMsg","Mencari aset...","info");hide("assetCard");hide("inspectionCard");
+ const {data,error}=await supabaseClient.from("elodie_inspection_assets").select("id,organization_id,asset_code,asset_name,asset_type,location,brand,model,serial_number,qr_token,notes,is_active").eq("organization_id",currentOrgId).eq("qr_token",token).maybeSingle();
+ if(error){message("scanMsg","Gagal membaca aset: "+error.message,"err");return}
+ if(!data){message("scanMsg","Aset tidak ditemukan pada organisasi aktif. Periksa QR atau akun organisasi.","err");return}
+ if(!data.is_active){message("scanMsg","Aset ditemukan tetapi berstatus tidak aktif. Hubungi Supervisor.","err");return}
+ currentAsset=data;$("assetName").textContent=data.asset_name;$("assetCode").textContent=data.asset_code;$("assetType").textContent=data.asset_type;$("assetLocation").textContent=data.location;$("assetBrand").textContent=[data.brand,data.model].filter(Boolean).join(" / ")||"-";$("assetSerial").textContent=data.serial_number||"-";$("assetNotes").textContent=data.notes||"";$("assetStatus").textContent="Aktif";
+ show("assetCard");hideMessage("scanMsg");$("assetCard").scrollIntoView({behavior:"smooth",block:"start"});
+}
+async function startScanner(){if(!window.Html5Qrcode){message("scanMsg","Library pemindai QR tidak termuat. Gunakan input QR Token manual.","err");return}
+ show("readerWrap");scanner=new Html5Qrcode("reader");
+ try{await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:240,height:240}},async(decoded)=>{await stopScanner();$("manualToken").value=decoded;await openByToken(decoded)},()=>{})}
+ catch(e){message("scanMsg","Kamera tidak dapat dibuka: "+e+". Pastikan izin kamera diberikan dan website menggunakan HTTPS.","err");}
+}
+async function stopScanner(){if(scanner){try{if(scanner.isScanning)await scanner.stop();await scanner.clear()}catch(e){}scanner=null}hide("readerWrap")}
+async function beginInspection(){
+ const {data:templates,error}=await supabaseClient.from("elodie_inspection_templates").select("id,template_name,asset_type,description,version").eq("organization_id",currentOrgId).eq("asset_type",currentAsset.asset_type).eq("is_active",true).order("version",{ascending:false});
+ if(error){message("scanMsg","Gagal memuat checklist: "+error.message,"err");return}
+ if(!templates?.length){message("scanMsg","Belum ada checklist aktif untuk jenis aset '"+currentAsset.asset_type+"'. Admin/Supervisor perlu membuat template checklist terlebih dahulu.","err");return}
+ currentTemplate=templates[0];
+ const {data:items,error:itemErr}=await supabaseClient.from("elodie_inspection_template_items").select("id,item_code,item_text,guidance,sort_order,is_required").eq("organization_id",currentOrgId).eq("template_id",currentTemplate.id).order("sort_order");
+ if(itemErr){message("scanMsg","Gagal memuat item checklist: "+itemErr.message,"err");return}
+ if(!items?.length){message("scanMsg","Template checklist belum memiliki item pemeriksaan. Minta Admin/Supervisor melengkapinya.","err");return}
+ templateItems=items;$("templateName").textContent=currentTemplate.template_name;$("templateDesc").textContent=currentTemplate.description||("Jenis aset: "+currentTemplate.asset_type);
+ $("checklistItems").innerHTML=items.map((it,i)=>`<div class="checkitem" data-item="${it.id}"><b>${i+1}. ${safe(it.item_text)} ${it.is_required?'<span style="color:#c74747">*</span>':''}</b>${it.guidance?`<small>${safe(it.guidance)}</small>`:''}<div class="choices">${["OK","NG","NA"].map(v=>`<label class="choice"><input type="radio" name="result-${it.id}" value="${v}"><span>${v}</span></label>`).join("")}</div><div class="field"><label>Catatan item (opsional)</label><input id="note-${it.id}" placeholder="Catatan hasil pemeriksaan"></div></div>`).join("");
+ hide("assetCard");show("inspectionCard");$("inspectionCard").scrollIntoView({behavior:"smooth"});
+}
+function safe(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function cancelInspection(){hide("inspectionCard");show("assetCard")}
+async function submitInspection(){
+ const responses=[];
+ for(const it of templateItems){const chosen=document.querySelector(`input[name="result-${it.id}"]:checked`);if(it.is_required&&!chosen){message("scanMsg","Lengkapi hasil untuk item: "+it.item_text,"err");document.querySelector(`[data-item="${it.id}"]`).scrollIntoView({behavior:"smooth"});return}if(chosen)responses.push({organization_id:currentOrgId,template_item_id:it.id,result:chosen.value,notes:$("note-"+it.id).value.trim()||null})}
+ if(!responses.length){message("scanMsg","Belum ada hasil checklist yang dipilih.","err");return}
+ $("submitBtn").disabled=true;$("submitBtn").textContent="Menyimpan...";
+ const now=new Date(),date=now.toISOString().slice(0,10).replaceAll("-","");const suffix=Math.random().toString(36).slice(2,7).toUpperCase();const number="INS-"+date+"-"+suffix;
+ const {data:inspection,error}=await supabaseClient.from("elodie_inspection_inspections").insert({organization_id:currentOrgId,inspection_number:number,asset_id:currentAsset.id,template_id:currentTemplate.id,inspector_id:currentUser.id,status:"draft",general_notes:$("generalNotes").value.trim()||null}).select("id").single();
+ if(error){message("scanMsg","Gagal membuat inspeksi: "+error.message,"err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
+ inspectionId=inspection.id;responses.forEach(r=>{r.inspection_id=inspectionId});
+ const {error:respErr}=await supabaseClient.from("elodie_inspection_responses").insert(responses);
+ if(respErr){message("scanMsg","Header inspeksi tersimpan, tetapi jawaban gagal disimpan: "+respErr.message+". Hubungi Admin; jangan kirim ulang sebelum diperiksa.","err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
+ const {error:updateErr}=await supabaseClient.from("elodie_inspection_inspections").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",inspectionId).eq("organization_id",currentOrgId);
+ if(updateErr){message("scanMsg","Jawaban tersimpan, tetapi status belum berhasil dikirim: "+updateErr.message+". Hubungi Admin.","err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
+ $("doneText").textContent="Nomor inspeksi "+number+" berhasil disimpan.";hide("inspectionCard");hide("assetCard");show("doneCard");$("doneCard").scrollIntoView({behavior:"smooth"});$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";
+}
+function resetFlow(){currentAsset=null;currentTemplate=null;templateItems=[];inspectionId=null;$("manualToken").value="";$("generalNotes").value="";hide("doneCard");hide("assetCard");hide("inspectionCard");window.scrollTo({top:0,behavior:"smooth"})}
+</script>
+</body></html>
