@@ -134,25 +134,72 @@ async function beginInspection(){
  if(itemErr){message("scanMsg","Gagal memuat item checklist: "+itemErr.message,"err");return}
  if(!items?.length){message("scanMsg","Template checklist belum memiliki item pemeriksaan. Minta Admin/Supervisor melengkapinya.","err");return}
  templateItems=items;$("templateName").textContent=currentTemplate.template_name;$("templateDesc").textContent=currentTemplate.description||("Jenis aset: "+currentTemplate.asset_type);
- $("checklistItems").innerHTML=items.map((it,i)=>`<div class="checkitem" data-item="${it.id}"><b>${i+1}. ${safe(it.item_text)} ${it.is_required?'<span style="color:#c74747">*</span>':''}</b>${it.guidance?`<small>${safe(it.guidance)}</small>`:''}<div class="choices">${["OK","NG","NA"].map(v=>`<label class="choice"><input type="radio" name="result-${it.id}" value="${v}"><span>${v}</span></label>`).join("")}</div><div class="field"><label>Catatan item (opsional)</label><input id="note-${it.id}" placeholder="Catatan hasil pemeriksaan"></div></div>`).join("");
+ $("checklistItems").innerHTML=items.map((it,i)=>`<div class="checkitem" data-item="${it.id}"><b>${i+1}. ${safe(it.item_text)} ${it.is_required?'<span style="color:#c74747">*</span>':''}</b>${it.guidance?`<small>${safe(it.guidance)}</small>`:''}<div class="choices">${["OK","NG","NA"].map(v=>`<label class="choice"><input type="radio" name="result-${it.id}" value="${v}"><span>${v}</span></label>`).join("")}</div><div class="field"><label>Catatan item (opsional)</label><input id="note-${it.id}" placeholder="Catatan hasil pemeriksaan"></div><div id="evidence-${it.id}" class="field hidden" style="background:#fff7f7;border:1px solid #f1cccc;border-radius:10px;padding:11px"><label>Foto BEFORE — wajib untuk temuan NG</label><input id="before-${it.id}" type="file" accept="image/*" capture="environment"><small>Ambil foto kondisi temuan sebelum perbaikan. Foto akan disimpan sebagai bukti inspeksi.</small></div></div>`).join("");
+ $("checklistItems").querySelectorAll('input[type="radio"]').forEach(r=>r.addEventListener("change",()=>toggleBeforeEvidence(r.name.replace("result-",""))));
  hide("assetCard");show("inspectionCard");$("inspectionCard").scrollIntoView({behavior:"smooth"});
 }
 function safe(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function cancelInspection(){hide("inspectionCard");show("assetCard")}
+function toggleBeforeEvidence(itemId){
+ const chosen=document.querySelector(`input[name="result-${itemId}"]:checked`);
+ const panel=$("evidence-"+itemId),file=$("before-"+itemId);
+ if(!panel||!file)return;
+ const isNG=chosen?.value==="NG";
+ panel.classList.toggle("hidden",!isNG);file.required=isNG;
+ if(!isNG)file.value="";
+}
+function fileExtension(file){
+ const byType=(file.type||"").split("/")[1]?.toLowerCase();
+ const ext=(byType||file.name.split(".").pop()||"jpg").replace(/[^a-z0-9]/g,"");
+ return ["jpg","jpeg","png","webp","heic","heif"].includes(ext)?ext:"jpg";
+}
 async function submitInspection(){
- const responses=[];
- for(const it of templateItems){const chosen=document.querySelector(`input[name="result-${it.id}"]:checked`);if(it.is_required&&!chosen){message("scanMsg","Lengkapi hasil untuk item: "+it.item_text,"err");document.querySelector(`[data-item="${it.id}"]`).scrollIntoView({behavior:"smooth"});return}if(chosen)responses.push({organization_id:currentOrgId,template_item_id:it.id,result:chosen.value,notes:$("note-"+it.id).value.trim()||null})}
+ const responses=[],ngItems=[];
+ for(const it of templateItems){
+  const chosen=document.querySelector(`input[name="result-${it.id}"]:checked`);
+  if(it.is_required&&!chosen){message("scanMsg","Lengkapi hasil untuk item: "+it.item_text,"err");document.querySelector(`[data-item="${it.id}"]`).scrollIntoView({behavior:"smooth"});return}
+  if(chosen){
+   const note=$("note-"+it.id).value.trim()||null;
+   responses.push({organization_id:currentOrgId,template_item_id:it.id,result:chosen.value,notes:note});
+   if(chosen.value==="NG"){
+    const photo=$("before-"+it.id)?.files?.[0];
+    if(!photo){message("scanMsg","Foto BEFORE wajib diunggah untuk item NG: "+it.item_text,"err");$("evidence-"+it.id).scrollIntoView({behavior:"smooth"});return}
+    if(!photo.type.startsWith("image/")){message("scanMsg","File foto BEFORE harus berupa gambar.","err");return}
+    ngItems.push({item:it,note,photo});
+   }
+  }
+ }
  if(!responses.length){message("scanMsg","Belum ada hasil checklist yang dipilih.","err");return}
- $("submitBtn").disabled=true;$("submitBtn").textContent="Menyimpan...";
+ $("submitBtn").disabled=true;$("submitBtn").textContent="Menyimpan inspeksi...";
  const now=new Date(),date=now.toISOString().slice(0,10).replaceAll("-","");const suffix=Math.random().toString(36).slice(2,7).toUpperCase();const number="INS-"+date+"-"+suffix;
- const {data:inspection,error}=await supabaseClient.from("elodie_inspection_inspections").insert({organization_id:currentOrgId,inspection_number:number,asset_id:currentAsset.id,template_id:currentTemplate.id,inspector_id:currentUser.id,status:"draft",general_notes:$("generalNotes").value.trim()||null}).select("id").single();
- if(error){message("scanMsg","Gagal membuat inspeksi: "+error.message,"err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
- inspectionId=inspection.id;responses.forEach(r=>{r.inspection_id=inspectionId});
- const {error:respErr}=await supabaseClient.from("elodie_inspection_responses").insert(responses);
- if(respErr){message("scanMsg","Header inspeksi tersimpan, tetapi jawaban gagal disimpan: "+respErr.message+". Hubungi Admin; jangan kirim ulang sebelum diperiksa.","err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
- const {error:updateErr}=await supabaseClient.from("elodie_inspection_inspections").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",inspectionId).eq("organization_id",currentOrgId);
- if(updateErr){message("scanMsg","Jawaban tersimpan, tetapi status belum berhasil dikirim: "+updateErr.message+". Hubungi Admin.","err");$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";return}
- $("doneText").textContent="Nomor inspeksi "+number+" berhasil disimpan.";hide("inspectionCard");hide("assetCard");show("doneCard");$("doneCard").scrollIntoView({behavior:"smooth"});$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi";
+ try{
+  const {data:inspection,error}=await supabaseClient.from("elodie_inspection_inspections").insert({organization_id:currentOrgId,inspection_number:number,asset_id:currentAsset.id,template_id:currentTemplate.id,inspector_id:currentUser.id,status:"draft",general_notes:$("generalNotes").value.trim()||null}).select("id").single();
+  if(error)throw new Error("Gagal membuat inspeksi: "+error.message);
+  inspectionId=inspection.id;responses.forEach(r=>{r.inspection_id=inspectionId});
+  const {data:savedResponses,error:respErr}=await supabaseClient.from("elodie_inspection_responses").insert(responses).select("id,template_item_id");
+  if(respErr)throw new Error("Header inspeksi tersimpan, tetapi jawaban gagal disimpan: "+respErr.message);
+  const responseByItem=new Map((savedResponses||[]).map(r=>[r.template_item_id,r.id]));
+  for(let i=0;i<ngItems.length;i++){
+   const ng=ngItems[i],findingId=crypto.randomUUID();
+   const findingNumber="FND-"+date+"-"+Math.random().toString(36).slice(2,7).toUpperCase();
+   const objectPath=currentOrgId+"/"+findingId+"/before."+fileExtension(ng.photo);
+   $("submitBtn").textContent="Mengunggah foto BEFORE "+(i+1)+"/"+ngItems.length+"...";
+   const {error:uploadErr}=await supabaseClient.storage.from("elodie-inspection-evidence").upload(objectPath,ng.photo,{contentType:ng.photo.type||"image/jpeg",upsert:false});
+   if(uploadErr)throw new Error("Inspeksi/jawaban tersimpan, tetapi upload foto BEFORE gagal: "+uploadErr.message+". Jangan kirim ulang; periksa data inspeksi terlebih dahulu.");
+   const findingDescription=ng.item.item_code?ng.item.item_code+" — "+ng.item.item_text:ng.item.item_text;
+   const {error:findingErr}=await supabaseClient.from("elodie_inspection_findings").insert({
+    id:findingId,organization_id:currentOrgId,finding_number:findingNumber,inspection_id:inspectionId,
+    response_id:responseByItem.get(ng.item.id)||null,description:findingDescription,
+    immediate_action:ng.note,created_by:currentUser.id,status:"open",before_photo_path:objectPath
+   });
+   if(findingErr)throw new Error("Foto BEFORE terunggah, tetapi pembuatan Finding gagal: "+findingErr.message+". Hubungi Admin; jangan kirim ulang sebelum diperiksa.");
+  }
+  const {error:updateErr}=await supabaseClient.from("elodie_inspection_inspections").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",inspectionId).eq("organization_id",currentOrgId);
+  if(updateErr)throw new Error("Data inspeksi dan Finding tersimpan, tetapi status belum berhasil dikirim: "+updateErr.message+". Hubungi Admin.");
+  $("doneText").textContent="Nomor inspeksi "+number+" berhasil disimpan. "+ngItems.length+" Finding NG dibuat otomatis.";
+  hide("inspectionCard");hide("assetCard");show("doneCard");$("doneCard").scrollIntoView({behavior:"smooth"});
+ }catch(err){message("scanMsg",err.message||String(err),"err")}
+ finally{$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi"}
 }
 function resetFlow(){currentAsset=null;currentTemplate=null;templateItems=[];inspectionId=null;$("manualToken").value="";$("generalNotes").value="";hide("doneCard");hide("assetCard");hide("inspectionCard");window.scrollTo({top:0,behavior:"smooth"})}
 </script>
