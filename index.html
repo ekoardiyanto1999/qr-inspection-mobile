@@ -45,6 +45,18 @@ footer{text-align:center;color:#98a4b2;font-size:11px;padding:10px}
  </form><div id="loginMsg" class="message"></div>
 </section>
 
+<section id="passwordSetupScreen" class="card hidden">
+ <div class="eyebrow">Keamanan Akun</div><h1>Ganti Password Awal</h1>
+ <p>Untuk melindungi akun, buat password baru sebelum menggunakan fitur inspeksi.</p>
+ <form id="passwordSetupForm">
+  <div class="field"><label>Password Baru (minimal 12 karakter)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="Masukkan password baru"></div>
+  <div class="field"><label>Konfirmasi Password Baru</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="Ulangi password baru"></div>
+  <button class="btn primary block" id="passwordSetupBtn">Simpan Password Baru</button>
+ </form>
+ <div id="passwordSetupMsg" class="message"></div>
+ <button class="btn block" type="button" style="margin-top:8px" onclick="signOut()">Keluar</button>
+</section>
+
 <section id="homeScreen" class="hidden">
  <div class="card">
   <div class="eyebrow">Organisasi aktif</div><h1 id="orgName">Elodie Demo</h1><p id="userLabel"></p>
@@ -116,38 +128,49 @@ async function initialize(requestedUser){
  const run=++initializeRun;
  const {data:authData,error:authError}=await supabaseClient.auth.getUser();
  if(run!==initializeRun)return;
- if(authError||!authData?.user){
-  message("loginMsg","Sesi login tidak valid. Silakan login kembali.","err");
-  return;
- }
+ if(authError||!authData?.user){message("loginMsg","Sesi login tidak valid. Silakan login kembali.","err");return}
  const user=authData.user;
- if(requestedUser?.id && requestedUser.id!==user.id){
-  message("loginMsg","Identitas sesi berubah saat proses login. Silakan login kembali.","err");
-  return;
- }
+ if(requestedUser?.id && requestedUser.id!==user.id){message("loginMsg","Identitas sesi berubah saat proses login. Silakan login kembali.","err");return}
  currentUser=user;
- const {data:members,error}=await supabaseClient.from("elodie_inspection_members")
-  .select("organization_id,full_name,role,is_active")
-  .eq("user_id",user.id).eq("is_active",true);
- if(run!==initializeRun)return;
- if(error||!members?.length){
-  message("loginMsg",error?"Gagal membaca organisasi: "+error.message:"Akun belum terdaftar sebagai anggota organisasi.","err");
-  await supabaseClient.auth.signOut();return;
+ // Kunci seluruh akses aplikasi sampai password awal diganti.
+ if(user.app_metadata?.must_change_password===true){
+  hide("loginScreen");hide("homeScreen");show("passwordSetupScreen");show("logoutBtn");
+  hideMessage("passwordSetupMsg");$("newPassword").value="";$("confirmPassword").value="";return;
  }
+ hide("passwordSetupScreen");
+ const {data:members,error}=await supabaseClient.from("elodie_inspection_members").select("organization_id,full_name,role,is_active").eq("user_id",user.id).eq("is_active",true);
+ if(run!==initializeRun)return;
+ if(error||!members?.length){message("loginMsg",error?"Gagal membaca organisasi: "+error.message:"Akun belum terdaftar sebagai anggota organisasi.","err");await supabaseClient.auth.signOut();return}
  currentMember=members[0];currentOrgId=currentMember.organization_id;
- const {data:org,error:orgError}=await supabaseClient.from("elodie_inspection_organizations")
-  .select("organization_name").eq("id",currentOrgId).single();
+ const {data:org,error:orgError}=await supabaseClient.from("elodie_inspection_organizations").select("organization_name").eq("id",currentOrgId).single();
  if(run!==initializeRun)return;
  $("orgName").textContent=org?.organization_name||"Organisasi";
- if(orgError) console.error("Gagal membaca nama organisasi:",orgError);
+ if(orgError)console.error("Gagal membaca nama organisasi:",orgError);
  $("userLabel").textContent=(currentMember.full_name||user.email)+" · "+currentMember.role;
- hide("loginScreen");show("homeScreen");show("logoutBtn");
- await loadMyFindings();
- if(run!==initializeRun)return;
+ hide("loginScreen");hide("passwordSetupScreen");show("homeScreen");show("logoutBtn");
+ await loadMyFindings();if(run!==initializeRun)return;
  const params=new URLSearchParams(location.search);const token=params.get("token")||params.get("qr_token");
  if(token){$("manualToken").value=token;await openByToken(token)}
 }
 $("loginForm").addEventListener("submit",signIn);
+$("passwordSetupForm").addEventListener("submit",completePasswordSetup);
+async function completePasswordSetup(e){
+ e.preventDefault();const newPassword=$("newPassword").value,confirmPassword=$("confirmPassword").value;
+ if(newPassword.length<12){message("passwordSetupMsg","Password baru minimal 12 karakter.","err");return}
+ if(newPassword!==confirmPassword){message("passwordSetupMsg","Konfirmasi password tidak sama.","err");return}
+ const button=$("passwordSetupBtn");button.disabled=true;button.textContent="Menyimpan password...";hideMessage("passwordSetupMsg");
+ try{
+  const {data,error}=await supabaseClient.functions.invoke("user-management",{body:{action:"complete_password_setup",new_password:newPassword}});
+  if(error)throw new Error(error.message||"Gagal menghubungi layanan penggantian password.");
+  if(!data?.success)throw new Error(data?.error||"Password belum berhasil diperbarui.");
+  const {error:refreshError}=await supabaseClient.auth.refreshSession();
+  if(refreshError)throw new Error("Password tersimpan, tetapi sesi belum dapat diperbarui. Silakan keluar lalu login kembali. "+refreshError.message);
+  const {data:authData,error:authError}=await supabaseClient.auth.getUser();
+  if(authError||!authData?.user)throw new Error("Password tersimpan. Silakan login kembali dengan password baru.");
+  message("passwordSetupMsg","Password berhasil diperbarui. Membuka aplikasi...","ok");await initialize(authData.user);
+ }catch(err){message("passwordSetupMsg",err.message||String(err),"err")}
+ finally{button.disabled=false;button.textContent="Simpan Password Baru"}
+}
 supabaseClient.auth.getSession().then(async({data,error})=>{
  if(error){console.error("Gagal membaca sesi:",error);return}
  if(data.session?.user&&!loginAttempted)await initialize(data.session.user);
@@ -156,8 +179,8 @@ async function signOut(){
  initializeRun++;loginAttempted=true;currentUser=null;currentMember=null;currentOrgId=null;
  await stopScanner();await supabaseClient.auth.signOut();location.href=location.pathname;
 }
-$("loginForm").addEventListener("submit",signIn);
-supabaseClient.auth.getSession().then(async({data})=>{if(data.session&&!loginAttempted)await initialize(data.session.user)});
+
+
 async function openByToken(raw){const token=tokenFromValue(raw);if(!token){message("scanMsg","QR Token belum diisi.","err");return}
  message("scanMsg","Mencari aset...","info");hide("assetCard");hide("inspectionCard");
  const {data,error}=await supabaseClient.from("elodie_inspection_assets").select("id,organization_id,asset_code,asset_name,asset_type,location,brand,model,serial_number,qr_token,notes,is_active").eq("organization_id",currentOrgId).eq("qr_token",token).maybeSingle();
