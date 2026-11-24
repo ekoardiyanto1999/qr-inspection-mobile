@@ -96,6 +96,7 @@ const SUPABASE_URL="https://kilrmcgjgipjnrxateyh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY="sb_publishable__32xG6J6OsOl1UxEjpphhg_Jw0xo_mN";
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 let currentUser=null,currentMember=null,currentOrgId=null,currentAsset=null,currentTemplate=null,templateItems=[],scanner=null,inspectionId=null;
+let initializeRun=0,loginAttempted=false;
 const $=id=>document.getElementById(id);
 function message(id,text,type="info"){const el=$(id);el.textContent=text;el.className="message show "+type}
 function hide(id){$(id).classList.add("hidden")}function show(id){$(id).classList.remove("hidden")}
@@ -120,7 +121,7 @@ async function initialize(user){currentUser=user;
 }
 async function signOut(){await stopScanner();await supabaseClient.auth.signOut();location.href=location.pathname}
 $("loginForm").addEventListener("submit",signIn);
-supabaseClient.auth.getSession().then(async({data})=>{if(data.session)await initialize(data.session.user)});
+supabaseClient.auth.getSession().then(async({data})=>{if(data.session&&!loginAttempted)await initialize(data.session.user)});
 async function openByToken(raw){const token=tokenFromValue(raw);if(!token){message("scanMsg","QR Token belum diisi.","err");return}
  message("scanMsg","Mencari aset...","info");hide("assetCard");hide("inspectionCard");
  const {data,error}=await supabaseClient.from("elodie_inspection_assets").select("id,organization_id,asset_code,asset_name,asset_type,location,brand,model,serial_number,qr_token,notes,is_active").eq("organization_id",currentOrgId).eq("qr_token",token).maybeSingle();
