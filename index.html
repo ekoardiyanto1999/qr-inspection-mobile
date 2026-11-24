@@ -57,6 +57,16 @@ footer{text-align:center;color:#98a4b2;font-size:11px;padding:10px}
   <button class="btn block" onclick="openByToken(document.getElementById('manualToken').value)">Cari Aset</button>
   <div id="scanMsg" class="message"></div>
  </div>
+
+ <div id="findingsCard" class="card">
+  <div class="row" style="justify-content:space-between;align-items:center">
+   <div><h2>Temuan Saya & Perbaikan</h2><p class="muted">Laporkan perbaikan dan unggah foto AFTER untuk diverifikasi Supervisor.</p></div>
+   <button class="btn" type="button" onclick="loadMyFindings()">Refresh</button>
+  </div>
+  <div id="findingsMessage" class="message"></div>
+  <div id="myFindingsList"><p class="muted">Memuat daftar temuan...</p></div>
+ </div>
+
  <div id="assetCard" class="card hidden">
   <div class="eyebrow">Aset ditemukan</div><h1 id="assetName"></h1><span class="badge" id="assetStatus"></span>
   <div class="assetline"><b>Kode Aset</b><span id="assetCode"></span></div>
@@ -104,6 +114,7 @@ async function initialize(user){currentUser=user;
  const {data:org}=await supabaseClient.from("elodie_inspection_organizations").select("name").eq("id",currentOrgId).single();
  $("orgName").textContent=org?.name||"Organisasi";$("userLabel").textContent=(currentMember.full_name||user.email)+" · "+currentMember.role;
  hide("loginScreen");show("homeScreen");show("logoutBtn");
+  await loadMyFindings();
  const params=new URLSearchParams(location.search);const token=params.get("token")||params.get("qr_token");
  if(token){$("manualToken").value=token;await openByToken(token)}
 }
@@ -201,6 +212,61 @@ async function submitInspection(){
  }catch(err){message("scanMsg",err.message||String(err),"err")}
  finally{$("submitBtn").disabled=false;$("submitBtn").textContent="Kirim Hasil Inspeksi"}
 }
+
+async function loadMyFindings(){
+ const root=$("myFindingsList");
+ if(!currentOrgId||!currentUser){root.innerHTML='<p class="muted">Silakan login kembali.</p>';return}
+ root.innerHTML='<p class="muted">Memuat daftar temuan...</p>';
+ const {data,error}=await supabaseClient.from("elodie_inspection_findings")
+  .select("id,finding_number,description,status,before_photo_path,after_photo_path,closing_notes,immediate_action,created_at")
+  .eq("organization_id",currentOrgId).eq("created_by",currentUser.id).order("created_at",{ascending:false});
+ if(error){root.innerHTML='<p class="muted">Gagal memuat temuan: '+safe(error.message)+'</p>';return}
+ if(!data?.length){root.innerHTML='<p class="muted">Belum ada temuan yang dibuat oleh akun ini.</p>';return}
+ const cards=[];
+ for(const f of data){
+  let beforeUrl="",afterUrl="";
+  if(f.before_photo_path){const r=await supabaseClient.storage.from("elodie-inspection-evidence").createSignedUrl(f.before_photo_path,3600);if(!r.error)beforeUrl=r.data.signedUrl;}
+  if(f.after_photo_path){const r=await supabaseClient.storage.from("elodie-inspection-evidence").createSignedUrl(f.after_photo_path,3600);if(!r.error)afterUrl=r.data.signedUrl;}
+  const status=String(f.status||"open").toLowerCase(),canReport=["open","in_progress"].includes(status);
+  cards.push(`<div class="checkitem">
+   <div class="row" style="align-items:flex-start"><div style="flex:2"><b>${safe(f.finding_number||"Temuan")}</b><p>${safe(f.description||"-")}</p></div><span class="badge">${safe(status.toUpperCase())}</span></div>
+   ${f.immediate_action?`<p class="muted">Tindakan langsung: ${safe(f.immediate_action)}</p>`:""}
+   <div class="row" style="align-items:flex-start;margin-top:10px">
+    <div><small class="muted">Foto BEFORE</small>${beforeUrl?`<a href="${beforeUrl}" target="_blank" rel="noopener"><img src="${beforeUrl}" alt="Foto BEFORE" style="width:100%;max-width:220px;border-radius:9px;border:1px solid var(--line)"></a>`:'<p class="muted">Foto tidak tersedia</p>'}</div>
+    <div><small class="muted">Foto AFTER</small>${afterUrl?`<a href="${afterUrl}" target="_blank" rel="noopener"><img src="${afterUrl}" alt="Foto AFTER" style="width:100%;max-width:220px;border-radius:9px;border:1px solid var(--line)"></a>`:'<p class="muted">Belum diunggah</p>'}</div>
+   </div>
+   ${canReport?`<div class="field"><label>Foto AFTER — wajib</label><input id="after-${f.id}" type="file" accept="image/*" capture="environment" required></div>
+    <div class="field"><label>Keterangan perbaikan — wajib</label><textarea id="closing-${f.id}" placeholder="Jelaskan tindakan perbaikan yang telah dilakukan"></textarea></div>
+    <div class="row"><button class="btn" type="button" onclick="startFindingRepair('${f.id}')">Mulai Perbaikan</button><button class="btn green" type="button" onclick="submitFindingRepair('${f.id}')">Kirim untuk Verifikasi</button></div>`
+    :status==="completed"?'<p class="muted">Perbaikan sudah dilaporkan. Menunggu verifikasi Supervisor.</p>'
+    :status==="verified"?'<p class="muted">Temuan telah diverifikasi Supervisor.</p>'
+    :'<p class="muted">Periksa status temuan bersama Supervisor.</p>'}
+   ${f.closing_notes?`<p class="muted">Keterangan terakhir: ${safe(f.closing_notes)}</p>`:""}
+  </div>`);
+ }
+ root.innerHTML=cards.join("");
+}
+async function startFindingRepair(id){
+ const {error}=await supabaseClient.from("elodie_inspection_findings").update({status:"in_progress"}).eq("id",id).eq("organization_id",currentOrgId).eq("created_by",currentUser.id);
+ if(error){message("findingsMessage","Tidak dapat memperbarui status. Periksa kebijakan akses tabel Findings: "+error.message,"err");return}
+ message("findingsMessage","Status temuan diperbarui menjadi In Progress.","ok");await loadMyFindings();
+}
+async function submitFindingRepair(id){
+ const photo=$("after-"+id)?.files?.[0],notes=$("closing-"+id)?.value.trim();
+ if(!photo){message("findingsMessage","Foto AFTER wajib diunggah.","err");return}
+ if(!photo.type.startsWith("image/")){message("findingsMessage","File foto AFTER harus berupa gambar.","err");return}
+ if(!notes){message("findingsMessage","Keterangan perbaikan wajib diisi.","err");return}
+ const ext=fileExtension(photo),path=currentOrgId+"/"+id+"/after."+ext;
+ message("findingsMessage","Mengunggah foto AFTER...","info");
+ const {error:uploadErr}=await supabaseClient.storage.from("elodie-inspection-evidence").upload(path,photo,{contentType:photo.type||"image/jpeg",upsert:false});
+ if(uploadErr){message("findingsMessage","Upload foto AFTER gagal: "+uploadErr.message,"err");return}
+ const {error:updateErr}=await supabaseClient.from("elodie_inspection_findings").update({
+  after_photo_path:path,closing_notes:notes,closed_by:currentUser.id,closed_at:new Date().toISOString(),status:"completed"
+ }).eq("id",id).eq("organization_id",currentOrgId).eq("created_by",currentUser.id);
+ if(updateErr){message("findingsMessage","Foto AFTER sudah terunggah, tetapi status temuan gagal diperbarui: "+updateErr.message+". Jangan unggah ulang; hubungi Admin untuk pemeriksaan.","err");return}
+ message("findingsMessage","Perbaikan berhasil dikirim dan menunggu verifikasi Supervisor.","ok");await loadMyFindings();
+}
+
 function resetFlow(){currentAsset=null;currentTemplate=null;templateItems=[];inspectionId=null;$("manualToken").value="";$("generalNotes").value="";hide("doneCard");hide("assetCard");hide("inspectionCard");window.scrollTo({top:0,behavior:"smooth"})}
 </script>
 </body></html>
