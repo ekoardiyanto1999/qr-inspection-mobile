@@ -102,24 +102,60 @@ function message(id,text,type="info"){const el=$(id);el.textContent=text;el.clas
 function hide(id){$(id).classList.add("hidden")}function show(id){$(id).classList.remove("hidden")}
 function hideMessage(id){$(id).className="message"}
 function tokenFromValue(value){let s=String(value||"").trim();try{if(s.startsWith("http")){const u=new URL(s);s=u.searchParams.get("token")||u.searchParams.get("qr_token")||u.pathname.split("/").filter(Boolean).pop()||s;}}catch(e){}return s}
-async function signIn(e){e.preventDefault();$("loginBtn").disabled=true;$("loginBtn").textContent="Memeriksa akun...";hideMessage("loginMsg");
+async function signIn(e){
+ e.preventDefault();
+ loginAttempted=true;
+ initializeRun++;
+ $("loginBtn").disabled=true;$("loginBtn").textContent="Memeriksa akun...";hideMessage("loginMsg");
  const {data,error}=await supabaseClient.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
  $("loginBtn").disabled=false;$("loginBtn").textContent="Masuk";
  if(error){message("loginMsg","Login gagal: "+error.message,"err");return}
  await initialize(data.user);
 }
-async function initialize(user){currentUser=user;
- const {data:members,error}=await supabaseClient.from("elodie_inspection_members").select("organization_id,full_name,role,is_active").eq("user_id",user.id).eq("is_active",true);
- if(error||!members?.length){message("loginMsg",error?"Gagal membaca organisasi: "+error.message:"Akun belum terdaftar sebagai anggota organisasi.","err");await supabaseClient.auth.signOut();return}
+async function initialize(requestedUser){
+ const run=++initializeRun;
+ const {data:authData,error:authError}=await supabaseClient.auth.getUser();
+ if(run!==initializeRun)return;
+ if(authError||!authData?.user){
+  message("loginMsg","Sesi login tidak valid. Silakan login kembali.","err");
+  return;
+ }
+ const user=authData.user;
+ if(requestedUser?.id && requestedUser.id!==user.id){
+  message("loginMsg","Identitas sesi berubah saat proses login. Silakan login kembali.","err");
+  return;
+ }
+ currentUser=user;
+ const {data:members,error}=await supabaseClient.from("elodie_inspection_members")
+  .select("organization_id,full_name,role,is_active")
+  .eq("user_id",user.id).eq("is_active",true);
+ if(run!==initializeRun)return;
+ if(error||!members?.length){
+  message("loginMsg",error?"Gagal membaca organisasi: "+error.message:"Akun belum terdaftar sebagai anggota organisasi.","err");
+  await supabaseClient.auth.signOut();return;
+ }
  currentMember=members[0];currentOrgId=currentMember.organization_id;
- const {data:org}=await supabaseClient.from("elodie_inspection_organizations").select("name").eq("id",currentOrgId).single();
- $("orgName").textContent=org?.name||"Organisasi";$("userLabel").textContent=(currentMember.full_name||user.email)+" · "+currentMember.role;
+ const {data:org,error:orgError}=await supabaseClient.from("elodie_inspection_organizations")
+  .select("organization_name").eq("id",currentOrgId).single();
+ if(run!==initializeRun)return;
+ $("orgName").textContent=org?.organization_name||"Organisasi";
+ if(orgError) console.error("Gagal membaca nama organisasi:",orgError);
+ $("userLabel").textContent=(currentMember.full_name||user.email)+" · "+currentMember.role;
  hide("loginScreen");show("homeScreen");show("logoutBtn");
-  await loadMyFindings();
+ await loadMyFindings();
+ if(run!==initializeRun)return;
  const params=new URLSearchParams(location.search);const token=params.get("token")||params.get("qr_token");
  if(token){$("manualToken").value=token;await openByToken(token)}
 }
-async function signOut(){await stopScanner();await supabaseClient.auth.signOut();location.href=location.pathname}
+$("loginForm").addEventListener("submit",signIn);
+supabaseClient.auth.getSession().then(async({data,error})=>{
+ if(error){console.error("Gagal membaca sesi:",error);return}
+ if(data.session?.user&&!loginAttempted)await initialize(data.session.user);
+});
+async function signOut(){
+ initializeRun++;loginAttempted=true;currentUser=null;currentMember=null;currentOrgId=null;
+ await stopScanner();await supabaseClient.auth.signOut();location.href=location.pathname;
+}
 $("loginForm").addEventListener("submit",signIn);
 supabaseClient.auth.getSession().then(async({data})=>{if(data.session&&!loginAttempted)await initialize(data.session.user)});
 async function openByToken(raw){const token=tokenFromValue(raw);if(!token){message("scanMsg","QR Token belum diisi.","err");return}
