@@ -256,7 +256,7 @@ async function submitFindingRepair(id){
  if(!photo){message("findingsMessage","Foto AFTER wajib diunggah.","err");return}
  if(!photo.type.startsWith("image/")){message("findingsMessage","File foto AFTER harus berupa gambar.","err");return}
  if(!notes){message("findingsMessage","Keterangan perbaikan wajib diisi.","err");return}
- const ext=fileExtension(photo),path=currentOrgId+"/"+id+"/after."+ext;
+ const ext=fileExtension(photo),path=currentOrgId+"/"+id+"/after-"+crypto.randomUUID()+"."+ext;
  message("findingsMessage","Mengunggah foto AFTER...","info");
  const {error:uploadErr}=await supabaseClient.storage.from("elodie-inspection-evidence").upload(path,photo,{contentType:photo.type||"image/jpeg",upsert:false});
  if(uploadErr){message("findingsMessage","Upload foto AFTER gagal: "+uploadErr.message,"err");return}
